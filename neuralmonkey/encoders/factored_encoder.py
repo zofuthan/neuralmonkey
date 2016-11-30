@@ -139,7 +139,8 @@ class FactoredEncoder(object):
             ## NOTE the initialization
             embeddings = tf.get_variable(
                 "word_embeddings", shape=[len(vocabulary), embedding_size],
-                initializer=tf.random_normal_initializer(stddev=0.01))
+                initializer=tf.random_normal_initializer(stddev=0.01),
+                regularizer=tf.nn.l2_loss)
 
             embedded_inputs = [tf.nn.embedding_lookup(embeddings, i)
                                for i in inputs]

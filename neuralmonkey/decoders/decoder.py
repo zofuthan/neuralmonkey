@@ -196,7 +196,8 @@ class Decoder(object):
 
         weights = tf.get_variable(
             "encoder_projection_W", [input_size, output_size],
-            initializer=tf.random_normal_initializer(stddev=0.01))
+            initializer=tf.random_normal_initializer(stddev=0.01),
+            regularizer=tf.nn.l2_loss)
 
         biases = tf.get_variable(
             "encoder_projection_b",
@@ -231,7 +232,8 @@ class Decoder(object):
         # I assume that they initialized them as any other weight matrix.
         return tf.get_variable(
             "word_embeddings", [self.vocabulary_size, self.embedding_size],
-            initializer=tf.random_normal_initializer(stddev=0.01))
+            initializer=tf.random_normal_initializer(stddev=0.01),
+            regularizer=tf.nn.l2_loss)
 
 
     def _training_placeholders(self):

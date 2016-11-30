@@ -43,7 +43,8 @@ class MultilayerPerceptron(object):
             with tf.variable_scope("classification_layer"):
                 self.n_params += last_layer_size * output_size
                 w_out = tf.get_variable(
-                    "W_out", shape=[last_layer_size, output_size])
+                    "W_out", shape=[last_layer_size, output_size],
+                    regularizer=tf.nn.l2_loss)
 
                 b_out = tf.get_variable(
                     "b_out", tf.zeros_initializer([output_size]))

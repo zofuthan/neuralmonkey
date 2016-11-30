@@ -51,7 +51,8 @@ class Attention(object):
             # This variable corresponds to Bahdanau's U_a in the paper
             k = tf.get_variable(
                 "AttnW", [1, 1, self.attn_size, self.attention_vec_size],
-                initializer=tf.random_normal_initializer(stddev=0.001))
+                initializer=tf.random_normal_initializer(stddev=0.001),
+                regularizer=tf.nn.l2_loss)
 
             self.hidden_features = tf.nn.conv2d(self.att_states_reshaped, k,
                                                 [1, 1, 1, 1], "SAME")
@@ -61,7 +62,8 @@ class Attention(object):
             self.v = tf.get_variable(
                 name="AttnV",
                 shape=[self.attention_vec_size],
-                initializer=tf.random_normal_initializer(stddev=.001))
+                initializer=tf.random_normal_initializer(stddev=.001),
+                regularizer=tf.nn.l2_loss)
             self.v_bias = tf.get_variable(
                 "AttnV_b", [], initializer=tf.constant_initializer(0))
 
@@ -117,6 +119,7 @@ class CoverageAttention(Attention):
                                                 input_weights=input_weights,
                                                 max_fertility=max_fertility)
 
+        # TODO how about regularization of these two variables?
         self.coverage_weights = tf.get_variable("coverage_matrix",
                                                 [1, 1, 1, self.attn_size])
         self.fertility_weights = tf.get_variable("fertility_matrix",

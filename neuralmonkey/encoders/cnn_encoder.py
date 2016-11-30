@@ -128,7 +128,8 @@ class CNNEncoder(object):
                             "wieghts",
                             shape=[filter_size, filter_size,
                                    last_n_channels, n_filters],
-                            initializer=tf.truncated_normal_initializer(stddev=.1))
+                            initializer=tf.truncated_normal_initializer(stddev=.1),
+                            regularizer=tf.nn.l2_loss)
                         conv_b = tf.get_variable(
                             "biases",
                             shape=[n_filters],
