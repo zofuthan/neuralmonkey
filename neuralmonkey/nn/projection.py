@@ -29,8 +29,11 @@ def linear(inputs, size, scope="LinearProjection"):
         total_arg_size += shape[1].value
 
     with tf.variable_scope(scope):
+        # TODO how about initializer here? It can be supplied by the scope,
+        # but it would also apply for the biases.
         weigths = tf.get_variable("weights", [total_arg_size, output_size],
                                   regularizer=tf.nn.l2_loss)
+        # TODO zero initializer here.
         biases = tf.get_variable("biases", [output_size])
 
         if len(inputs) > 1:
