@@ -1,8 +1,9 @@
 import math
 import tensorflow as tf
 
-# tests: mypy
+from neuralmonkey.nn.projection import linear
 
+# tests: mypy
 
 class NoisyGRUCell(tf.nn.rnn_cell.RNNCell):
     """
@@ -29,15 +30,16 @@ class NoisyGRUCell(tf.nn.rnn_cell.RNNCell):
     def __call__(self, inputs, state, scope=None):
         """Gated recurrent unit (GRU) with nunits cells."""
         with tf.variable_scope(scope or type(self).__name__):  # "GRUCell"
-            with tf.variable_scope("Gates"):  # Reset gate and update gate.
+            with tf.variable_scope("Gates") as gates_scope:
+                # Reset gate and update gate.
                 # We start with bias of 1.0 to not reset and not update.
                 r, u = tf.split(
-                    1, 2, tf.nn.seq2seq.linear([inputs, state], 2 * self._num_units, True, 1.0))
+                    1, 2, linear([inputs, state], 2 * self._num_units, gates_scope))
                 r, u = noisy_sigmoid(
                     r, self.training), noisy_sigmoid(u, self.training)
-        with tf.variable_scope("Candidate"):
-            c = noisy_tanh(tf.nn.seq2seq.linear([inputs, r * state],
-                                                self._num_units, True), self.training)
+        with tf.variable_scope("Candidate") as candidate_scope:
+            c = noisy_tanh(linear([inputs, r * state],
+                                  self._num_units, candidate_scope, self.training)
             new_h = u * state + (1 - u) * c
         return new_h, new_h
 
