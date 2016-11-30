@@ -8,6 +8,8 @@ import tensorflow as tf
 def linear(inputs, size, scope="LinearProjection"):
     """Simple linear projection
 
+    This code is partially copied from TF repository
+
     y = Wx + b
 
     Arguments:
@@ -19,8 +21,24 @@ def linear(inputs, size, scope="LinearProjection"):
     Returns:
         A tensor of shape batch x size
     """
+    total_arg_size = 0
+    shapes = [a.get_shape() for a in args]
+    for shape in shapes:
+        assert shape.ndims == 2
+        assert shape[1].value is not None
+        total_arg_size += shape[1].value
+
     with tf.variable_scope(scope):
-        return tf.nn.seq2seq.linear(inputs, size, True)
+        weigths = tf.get_variable("weights", [total_arg_size, output_size],
+                                  regularizer=tf.nn.l2_loss)
+        biases = tf.get_variable("biases", [output_size])
+
+        if len(inputs) > 1:
+            proj_input = tf.concat(1, inputs)
+        else:
+            proj_input = inputs[0]
+
+        return tf.matmul(proj_input, weights) + biases
 
 
 def nonlinear(inputs, size, activation=tf.tanh, scope="NonlinearProjection"):
