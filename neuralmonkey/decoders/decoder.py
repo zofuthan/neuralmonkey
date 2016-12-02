@@ -106,7 +106,7 @@ class Decoder(object):
             embedded_go_symbols = self._embed(self.go_symbols)
 
             self.train_rnn_outputs, _, \
-                self.train_logits = self._attention_decoder(
+                self.train_logits = self._decoding_function(
                     embedded_train_inputs, runtime_mode=False)
 
             assert not scope.reuse
@@ -117,7 +117,7 @@ class Decoder(object):
             # runtime methods and objects are used when no ground truth is
             # provided (such as during testing)
             self.runtime_rnn_outputs, self.runtime_rnn_states, \
-                self.runtime_logits = self._attention_decoder(
+                self.runtime_logits = self._decoding_function(
                     embedded_go_symbols, runtime_mode=True)
 
             # NOTE From this point onwards, the variables in this scope
@@ -337,9 +337,6 @@ class Decoder(object):
             A Tensor of shape batch_size x vocabulary_size
         """
         return linear(self._dropout(rnn_output), self.vocabulary_size)
-
-
-
 
 
     def _decoding_function(self, inputs, runtime_mode):
