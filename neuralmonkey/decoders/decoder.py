@@ -241,14 +241,13 @@ class Decoder(object):
         state of the decoder."""
 
         if len(self.encoders) == 0:
-            return tf.zeros([self.rnn_size])
+            self.initial_state = tf.zeros([self.rnn_size])
+        else:
+            encoders_out = tf.concat(1, [e.encoded for e in self.encoders])
+            if self.project_encoder_outputs:
+                encoders_out = self._encoder_projection(encoders_out)
 
-        encoders_out = tf.concat(1, [e.encoded for e in self.encoders])
-
-        if self.project_encoder_outputs:
-            encoders_out = self._encoder_projection(encoders_out)
-
-        self.initial_state = self._dropout(encoders_out)
+            self.initial_state = self._dropout(encoders_out)
 
         ## Broadcast the initial state to the whole batch if needed
         ## CHANGE: REFACTORED + EXPAND DIMS USED INSTEAD OF [:1]. ALSO, THE
@@ -256,7 +255,7 @@ class Decoder(object):
         if len(self.initial_state.get_shape()) == 1:
             assert self.initial_state.get_shape()[0].value == self.rnn_size
 
-            batch_size = tf.shape(self.train_inputs[0])[1]
+            batch_size = tf.shape(self.train_inputs)[1]
             tiles = tf.tile(self.initial_state, tf.expand_dims(batch_size, 0))
 
             self.initial_state = tf.reshape(tiles, [-1, self.rnn_size])
