@@ -135,16 +135,16 @@ class Decoder(object):
                             for l in self.runtime_logits]
 
             self.train_loss = tf.nn.seq2seq.sequence_loss(
-                self.train_logits, self.train_targets, self.train_padding,
-                self.vocabulary_size) * 100
+                self.train_logits, self.train_targets,
+                tf.unpack(self.train_padding), self.vocabulary_size) * 100
 
             self.runtime_loss = tf.nn.seq2seq.sequence_loss(
-                self.runtime_logits, self.train_targets, self.train_padding,
-                self.vocabulary_size) * 100
+                self.runtime_logits, self.train_targets,
+                tf.unpack(self.train_padding), self.vocabulary_size) * 100
 
             self.cross_entropies = tf.nn.seq2seq.sequence_loss_by_example(
-                self.train_logits, self.train_targets, self.train_padding,
-                self.vocabulary_size)
+                self.train_logits, self.train_targets,
+                tf.unpack(self.train_padding), self.vocabulary_size)
 
             self._init_summaries()
 
@@ -181,7 +181,7 @@ class Decoder(object):
             name="decoder_input_placeholder")
 
         batch_size = tf.shape(self.train_inputs)[1]
-        self.train_targets = self.train_inputs[1:]
+        self.train_targets = tf.unpack(self.train_inputs[1:])
 
         self.train_padding = tf.placeholder(
             tf.float32, [self.max_output_len + 1, None],
@@ -210,8 +210,9 @@ class Decoder(object):
         if self.dropout_keep_prob == 1.0:
             return variable
 
+        train_mode_selector = tf.fill(tf.shape(variable)[:1], self.train_mode)
         dropped_value = tf.nn.dropout(variable, self.dropout_keep_prob)
-        return tf.select(self.train_mode, dropped_value, variable)
+        return tf.select(train_mode_selector, dropped_value, variable)
 
 
     def _encoder_projection(self, encoded_states):
@@ -375,7 +376,7 @@ class Decoder(object):
 
             tf.get_variable_scope().reuse_variables()
 
-            for step in range(1, self.max_output_len + 2):
+            for step in range(1, self.max_output_len + 1):
 
                 if runtime_mode:
                     # NOTE loop function must never leave this scope
@@ -403,7 +404,7 @@ class Decoder(object):
 
             if runtime_mode:
                 for i, a in enumerate(att_objects):
-                    time = self.max_output_len + 2
+                    time = self.max_output_len + 1
                     attentions = a.attentions_in_time[-time:]
                     alignments = tf.expand_dims(tf.transpose(
                         tf.pack(attentions), perm=[1, 2, 0]), -1)
@@ -458,15 +459,10 @@ class Decoder(object):
 
         if sentences is not None:
             inputs, weights = self.vocabulary.sentences_to_tensor(
-                sentences, self.max_output)
+                sentences, self.max_output_len)
 
-            for placeholder, weight in zip(self.train_padding,
-                                           weights):
-                fd[placeholder] = weight
-
-            for placeholder, tensor in zip(self.train_inputs,
-                                           inputs):
-                fd[placeholder] = tensor
+            fd[self.train_padding] = weights
+            fd[self.train_inputs] = inputs
         else:
             start_token_index = self.vocabulary.get_word_index(
                 START_TOKEN)
