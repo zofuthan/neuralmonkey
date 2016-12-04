@@ -98,7 +98,8 @@ class Decoder(object):
                 "learning_step", [], initializer=tf.constant_initializer(0),
                 trainable=False)
 
-            self._create_placeholder_nodes()
+            self._create_training_placeholder_nodes()
+            self._create_input_placeholder_nodes()
             self._create_initial_state()
             self._create_embedding_matrix()
 
@@ -134,16 +135,18 @@ class Decoder(object):
             self.decoded = [tf.argmax(l[:, 1:], 1) + 1
                             for l in self.runtime_logits]
 
+            train_targets = tf.unpack(self.train_inputs[1:])
+
             self.train_loss = tf.nn.seq2seq.sequence_loss(
-                self.train_logits, self.train_targets,
+                self.train_logits, train_targets,
                 tf.unpack(self.train_padding), self.vocabulary_size) * 100
 
             self.runtime_loss = tf.nn.seq2seq.sequence_loss(
-                self.runtime_logits, self.train_targets,
+                self.runtime_logits, train_targets,
                 tf.unpack(self.train_padding), self.vocabulary_size) * 100
 
             self.cross_entropies = tf.nn.seq2seq.sequence_loss_by_example(
-                self.train_logits, self.train_targets,
+                self.train_logits, train_targets,
                 tf.unpack(self.train_padding), self.vocabulary_size)
 
             self._init_summaries()
@@ -170,34 +173,26 @@ class Decoder(object):
         return [tf.nn.top_k(p, k_best) for p in self.runtime_logprobs]
 
 
-    def _create_placeholder_nodes(self):
-        """Creates placeholder nodes in the computation graph"""
+    def _create_training_placeholder_nodes(self):
+        """Creates training placeholder nodes in the computation graph
 
-        self.train_mode = tf.placeholder(
-            tf.bool, shape=[], name="mode_placeholder")
+        The training placeholder nodes are NOT fed during runtime.
+        """
+        self.train_mode = tf.placeholder(tf.bool, [], name="mode_placeholder")
 
         self.train_inputs = tf.placeholder(
             tf.int64, [self.max_output_len + 2, None],
             name="decoder_input_placeholder")
 
-        batch_size = tf.shape(self.train_inputs)[1]
-        self.train_targets = tf.unpack(self.train_inputs[1:])
-
         self.train_padding = tf.placeholder(
             tf.float32, [self.max_output_len + 1, None],
             name="decoder_padding_placeholder")
 
-        # Explanation of the lines below:
-        #   - inner expand_dims converts scalar batch size to
-        #     a 1-D Tensor which is needed for tf.fill
-        #   - tf.fill copies go_symbol batch-size-times.
-        #   - outer expand_dims convert 1-D tensor of go symbols in batch
-        #     to (1 x batch)-shaped tensor.  The same could be achieved with
-        #     tf.reshape
 
-        go_symbol_idx = self.vocabulary.get_word_index(START_TOKEN)
-        self.go_symbols = tf.expand_dims(
-            tf.fill(tf.expand_dims(batch_size, 0), go_symbol_idx), 0)
+    def _create_input_placeholder_nodes(self):
+        """Creates runtime placeholder nodes in the computation graph"""
+        self.go_symbols = tf.placeholder(tf.int64, [1, None],
+                                         name="go_placeholder")
 
 
     def _dropout(self, variable):
@@ -255,11 +250,10 @@ class Decoder(object):
         if len(self.initial_state.get_shape()) == 1:
             assert self.initial_state.get_shape()[0].value == self.rnn_size
 
-            batch_size = tf.shape(self.train_inputs)[1]
+            batch_size = tf.shape(self.go_symbols)[1]
             tiles = tf.tile(self.initial_state, tf.expand_dims(batch_size, 0))
 
             self.initial_state = tf.reshape(tiles, [-1, self.rnn_size])
-
 
 
     def _create_embedding_matrix(self):
@@ -454,21 +448,29 @@ class Decoder(object):
         # fd is the common name for feed dictionary
         fd = {}
         fd[self.train_mode] = train
+
+        go_symbol_idx = self.vocabulary.get_word_index(START_TOKEN)
+        fd[self.go_symbols] = np.full([1, len(dataset)], go_symbol_idx,
+                                      dtype=np.int64)
+
         sentences = dataset.get_series(self.data_id, allow_none=True)
 
+        assert sentences is not None or not train
         if sentences is not None:
             inputs, weights = self.vocabulary.sentences_to_tensor(
                 sentences, self.max_output_len)
 
             fd[self.train_padding] = weights
             fd[self.train_inputs] = inputs
-        else:
-            start_token_index = self.vocabulary.get_word_index(
-                START_TOKEN)
 
-            fd[self.train_inputs[0]] = np.repeat(start_token_index,
-                                                 len(dataset))
-            for placeholder in self.train_padding:
-                fd[placeholder] = np.ones(len(dataset))
+        # else:
+        #     start_token_index = self.vocabulary.get_word_index(
+        #         START_TOKEN)
+
+        #     fd[self.train_inputs[0]] = np.repeat(start_token_index,
+        #                                          len(dataset))
+        #     fd[self.train_padding[0]] = np.ones(len(dataset))
+        #     for placeholder in self.train_padding:
+        #         fd[placeholder] = np.ones(len(dataset))
 
         return fd
