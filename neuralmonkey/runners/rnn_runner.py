@@ -241,7 +241,7 @@ class RuntimeRnnExecutable(Executable):
             raise Exception(
                 "Nothing to execute, if there is already a result.")
 
-        to_run = {'logprobs': self._decoder.train_logprobs[self._time_step]}
+        to_run = {'logprobs': self._decoder.runtime_logprobs[self._time_step]}
 
         self._current_beam_batch = self._to_exapand.pop()
 
