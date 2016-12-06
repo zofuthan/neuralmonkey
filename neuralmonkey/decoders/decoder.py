@@ -106,20 +106,25 @@ class Decoder(object):
             embedded_train_inputs = self._embed(self.train_inputs[:-1])
             embedded_go_symbols = self._embed(self.go_symbols)
 
-            self.train_rnn_outputs, _, \
-                self.train_logits = self._decoding_function(
-                    embedded_train_inputs, runtime_mode=False)
+
+            with tf.variable_scope("decoding_function") as df:
+                (self.train_rnn_outputs,
+                 _,
+                 self.train_logits) = self._decoding_function(
+                     embedded_train_inputs, df, runtime_mode=False)
 
             assert not scope.reuse
             # Use the same variables for runtime decoding!
             scope.reuse_variables()
             assert scope.reuse
 
-            # runtime methods and objects are used when no ground truth is
-            # provided (such as during testing)
-            self.runtime_rnn_outputs, self.runtime_rnn_states, \
-                self.runtime_logits = self._decoding_function(
-                    embedded_go_symbols, runtime_mode=True)
+            with tf.variable_scope("decoding_function") as df:
+                # runtime methods and objects are used when no ground truth is
+                # provided (such as during testing)
+                (self.runtime_rnn_outputs,
+                 self.runtime_rnn_states,
+                 self.runtime_logits) = self._decoding_function(
+                     embedded_go_symbols, df, runtime_mode=True)
 
             # NOTE From this point onwards, the variables in this scope
             # REMAIN reused, so no further creation of variables is allowed
@@ -149,9 +154,11 @@ class Decoder(object):
                 self.train_logits, train_targets,
                 tf.unpack(self.train_padding), self.vocabulary_size)
 
+            self._visualize_alignments()
             self._init_summaries()
 
         log("Decoder initialized.")
+
 
     @property
     def vocabulary_size(self):
@@ -178,8 +185,6 @@ class Decoder(object):
 
         The training placeholder nodes are NOT fed during runtime.
         """
-        self.train_mode = tf.placeholder(tf.bool, [], name="mode_placeholder")
-
         self.train_inputs = tf.placeholder(
             tf.int64, [self.max_output_len + 2, None],
             name="decoder_input_placeholder")
@@ -191,8 +196,12 @@ class Decoder(object):
 
     def _create_input_placeholder_nodes(self):
         """Creates runtime placeholder nodes in the computation graph"""
+        self.train_mode = tf.placeholder(tf.bool, [], name="mode_placeholder")
         self.go_symbols = tf.placeholder(tf.int64, [1, None],
                                          name="go_placeholder")
+
+        self.runtime_prev_word = tf.placeholder(tf.int64, [None],
+                                                "previous_word_placeholder")
 
 
     def _dropout(self, variable):
@@ -205,6 +214,7 @@ class Decoder(object):
         if self.dropout_keep_prob == 1.0:
             return variable
 
+        # TODO remove this line as soon as TF .12 is used.
         train_mode_selector = tf.fill(tf.shape(variable)[:1], self.train_mode)
         dropped_value = tf.nn.dropout(variable, self.dropout_keep_prob)
         return tf.select(train_mode_selector, dropped_value, variable)
@@ -302,16 +312,22 @@ class Decoder(object):
 
 
 
-    def _loop_function(self, rnn_output):
+    def _loop_function(self, rnn_output, scope):
         """Basic loop function. Projects state to logits, take the
         argmax of the logits, embed the word and perform dropout on the
         embedding vector.
 
         Arguments:
             rnn_output: The output of the decoder RNN
+            scope: TF scope for output projection variables. Reusing should be
+                always enabled in this scope since loop function is used at
+                runtime
         """
-        output_activation = self._logit_function(rnn_output)
-        previous_word = tf.argmax(output_activation, 1)
+        assert scope.reuse
+        with tf.variable_scope(scope):
+            output_activation = self._logit_function(rnn_output)
+            previous_word = tf.argmax(output_activation, 1)
+
         input_embedding = tf.nn.embedding_lookup(self.embedding_matrix,
                                                  previous_word)
         return self._dropout(input_embedding)
@@ -333,81 +349,91 @@ class Decoder(object):
         return linear(self._dropout(rnn_output), self.vocabulary_size)
 
 
-    def _decoding_function(self, inputs, runtime_mode):
+    def decoding_step(self, current_input, state, scope):
+        """Perform one step of the decoder RNN
+
+        Arguments:
+            current_input: The input of the decoder RNN
+            state: The state of the RNN
+
+        Returns:
+            A triple of logit, output and next state
+        """
+        cell = self._get_rnn_cell()
+        att_objects = self._collect_attention_objects()
+
+        with tf.variable_scope(scope):
+            contexts = [a.attention(state) for a in att_objects]
+            output = self.output_projection(current_input, state, contexts)
+
+            _, next_state = cell(
+                tf.concat(1, [current_input] + contexts), state)
+
+            logit = self._logit_function(output)
+
+        return logit, output, next_state
+
+
+    def _decoding_function(self, inputs, scope, runtime_mode):
         """Run the decoder RNN.
 
         Arguments:
             inputs: The decoder inputs. If runtime_mode=True, only the first
                     input is used.
+            scope: Scope for logit function and output projection variables
             runtime_mode: Boolean flag whether the decoder is running in
                           runtime mode (with loop function).
         """
-        cell = self._get_rnn_cell()
-        att_objects = self._collect_attention_objects()
-        initial_state = self.initial_state
+        ## CHANGE:
+        ## EMBEDDED INPUTS NOW OF SHAPE TIME x BATCH x RNN_SIZE
+        ## EMBEDDED GO_SYMBOLS ARE 1 x BATCH x RNN_SIZE
 
-        with tf.variable_scope("decoding_function"):
+        assert runtime_mode == scope.reuse
+        logit, output, state = self.decoding_step(
+            inputs[0], self.initial_state, scope)
 
-            ## CHANGE:
-            ## EMBEDDED INPUTS NOW OF SHAPE TIME x BATCH x RNN_SIZE
-            ## EMBEDDED GO_SYMBOLS ARE 1 x BATCH x RNN_SIZE
+        output_logits = [logit]
+        rnn_outputs = [output]
+        rnn_states = [self.initial_state, state]
 
-            contexts = [a.attention(initial_state)
-                        for a in att_objects]
+        assert runtime_mode == scope.reuse
+        scope.reuse_variables()
+        assert scope.reuse
 
-            output = self.output_projection(
-                inputs[0], initial_state, contexts)
-
-            _, state = cell(
-                tf.concat(1, [inputs[0]] + contexts), initial_state)
-
-            logit = self._logit_function(output)
-
-            output_logits = [logit]
-            rnn_outputs = [output]
-            rnn_states = [initial_state, state]
-
-            tf.get_variable_scope().reuse_variables()
-
-            for step in range(1, self.max_output_len + 1):
-
-                if runtime_mode:
-                    # NOTE loop function must never leave this scope
-                    # because the _logit_function is scope-sensitive,
-                    # meaning it would create a new set of parameters
-                    # in a different scope
-                    current_input = self._loop_function(output)
-                else:
-                    current_input = inputs[step]
-
-                ## N-th decoding step
-                contexts = [a.attention(state) for a in att_objects]
-                output = self.output_projection(
-                    current_input, state, contexts)
-                _, state = cell(
-                    tf.concat(1, [current_input] + contexts), state)
-
-                logit = self._logit_function(output)
-
-                logit = self._logit_function(output)
-
-                output_logits.append(logit)
-                rnn_outputs.append(output)
-                rnn_states.append(state)
+        for step in range(1, self.max_output_len + 1):
 
             if runtime_mode:
-                for i, a in enumerate(att_objects):
-                    time = self.max_output_len + 1
-                    attentions = a.attentions_in_time[-time:]
-                    alignments = tf.expand_dims(tf.transpose(
-                        tf.pack(attentions), perm=[1, 2, 0]), -1)
+                # NOTE loop function must never leave this scope
+                # because the _logit_function is scope-sensitive,
+                # meaning it would create a new set of parameters
+                # in a different scope
+                current_input = self._loop_function(output, scope)
+            else:
+                current_input = inputs[step]
 
-                    tf.image_summary(
-                        "attention_{}".format(i), alignments,
-                        collections=["summary_val_plots"],
-                        max_images=256)
+            logit, output, state = self.decoding_step(current_input, state,
+                                                      scope)
+
+            output_logits.append(logit)
+            rnn_outputs.append(output)
+            rnn_states.append(state)
 
         return rnn_outputs, rnn_states, output_logits
+
+
+    def _visualize_alignments(self):
+        att_objects = self._collect_attention_objects()
+
+        for i, a in enumerate(att_objects):
+            time = self.max_output_len + 1
+            attentions = a.attentions_in_time[-time:]
+            alignments = tf.expand_dims(tf.transpose(
+                tf.pack(attentions), perm=[1, 2, 0]), -1)
+
+            tf.image_summary(
+                "attention_{}".format(i), alignments,
+                collections=["summary_val_plots"],
+                max_images=256)
 
 
     def _init_summaries(self):
@@ -418,12 +444,12 @@ class Decoder(object):
 
         - summary_train: collects statistics from the train-time
         """
-        tf.scalar_summary("train_loss_with_decoded_inputs",
-                          self.runtime_loss,
-                          collections=["summary_train"])
+        # tf.scalar_summary("train_loss_with_decoded_inputs",
+        #                   self.runtime_loss,
+        #                   collections=["summary_train"])
 
-        tf.scalar_summary("train_optimization_cost", self.train_loss,
-                          collections=["summary_train"])
+        # tf.scalar_summary("train_optimization_cost", self.train_loss,
+        #                   collections=["summary_train"])
 
 
     def feed_dict(self, dataset, train=False):
