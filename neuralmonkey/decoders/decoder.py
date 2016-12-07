@@ -271,7 +271,7 @@ class Decoder(object):
         # I assume that they initialized them as any other weight matrix.
 
         if self.reuse_word_embeddings:
-            self.embedding_matrix = self.encoders[0].word_embeddings
+            self.embedding_matrix = self.encoders[0].embedding_matrix
         else:
             self.embedding_matrix = tf.get_variable(
                 "word_embeddings", [self.vocabulary_size, self.embedding_size],
