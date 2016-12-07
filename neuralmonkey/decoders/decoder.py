@@ -78,12 +78,13 @@ class Decoder(object):
                     " embeddings from the encoder.", color="red")
 
         if len(self.encoders) > 0 and not self.project_encoder_outputs:
-            if "rnn_size" in kwargs:
-                log("Warning: rnn_size attribute will not be used "
-                    "without encoder projection!", color="red")
-
             self.rnn_size = sum(e.encoded.get_shape()[1].value
                                 for e in self.encoders)
+
+            if "rnn_size" in kwargs:
+                log("Warning: rnn_size attribute will not be used without "
+                    "encoder projection! Using the sum of encoder hidden state "
+                    "sizes, which is {}".format(self.rnn_size), color="red")
 
         log("Initializing decoder, name: '{}'".format(self.name))
 
@@ -100,8 +101,8 @@ class Decoder(object):
             self._create_initial_state()
             self._create_embedding_matrix()
 
-            embedded_train_inputs = self._embed(self.train_inputs[:-1])
-            embedded_go_symbols = self._embed(self.go_symbols)
+            embedded_train_inputs = self._embed_and_dropout(self.train_inputs[:-1])
+            embedded_go_symbols = self._embed_and_dropout(self.go_symbols)
 
 
             with tf.variable_scope("decoding_function") as df_scope:
@@ -150,7 +151,7 @@ class Decoder(object):
                 self.train_logits, train_targets,
                 tf.unpack(self.train_padding), self.vocabulary_size)
 
-            self._visualize_alignments()
+            self._visualize_attention()
 
         log("Decoder initialized.")
 
@@ -278,7 +279,7 @@ class Decoder(object):
                 initializer=tf.random_normal_initializer(stddev=0.01))
 
 
-    def _embed(self, inputs):
+    def _embed_and_dropout(self, inputs):
         """Embed the input using the embedding matrix and apply dropout
 
         Arguments:
@@ -409,7 +410,8 @@ class Decoder(object):
         return rnn_outputs, rnn_states, output_logits
 
 
-    def _visualize_alignments(self):
+    def _visualize_attention(self):
+        """Create image summaries with attentions"""
         att_objects = self._collect_attention_objects()
 
         for i, a in enumerate(att_objects):
