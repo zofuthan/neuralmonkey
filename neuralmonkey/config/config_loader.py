@@ -41,8 +41,14 @@ def build_object(value, all_dicts, existing_objects, depth):
     #   existing_objects[value] = None
 
     if isinstance(value, collections.Iterable) and not isinstance(value, str):
-        return [build_object(val, all_dicts, existing_objects, depth + 1)
-                for val in value]
+
+        builded = [build_object(val, all_dicts, existing_objects, depth + 1)
+                   for val in value]
+
+        if isinstance(value, tuple):
+            return tuple(builded)
+        return builded
+
 
     if value in existing_objects:
         debug("Skipping already initialized value: {}".format(value),

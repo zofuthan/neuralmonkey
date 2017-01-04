@@ -101,6 +101,14 @@ class Attention(object):
         return tf.reduce_sum(
             self.v * tf.tanh(self.hidden_features + y), [2, 3]) + self.v_bias
 
+    def initialize(self, batch_size, dtype):
+        batch_attn_size = tf.pack([batch_size, self.attn_size])
+        initial = tf.zeros(batch_attn_size, dtype=dtype)
+        # Ensure the second shape of attention vectors is set.
+        initial.set_shape([None, self.attn_size])
+        return initial
+
+
 
 class CoverageAttention(Attention):
 

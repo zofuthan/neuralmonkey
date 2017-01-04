@@ -18,8 +18,8 @@ class GreedyRunner(BaseRunner):
         super(GreedyRunner, self).__init__(output_series, decoder)
         self._postprocess = postprocess
 
-        self.image_summaries = tf.merge_summary(
-            tf.get_collection("summary_val_plots"))
+        #self.image_summaries = tf.merge_summary(
+        #    tf.get_collection("summary_val_plots"))
 
     def get_executable(self, train=False, summaries=True):
         if train:
@@ -30,8 +30,8 @@ class GreedyRunner(BaseRunner):
                        "runtime_xent": tf.zeros([])}
         fecthes["decoded_logprobs"] = self._decoder.runtime_logprobs
 
-        if summaries:
-            fecthes['image_summaries'] = self.image_summaries
+        #if summaries:
+        #    fecthes['image_summaries'] = self.image_summaries
 
         return GreedyRunExecutable(self.all_coders, fecthes,
                                    self._decoder.vocabulary,
@@ -77,12 +77,12 @@ class GreedyRunExecutable(Executable):
             decoded_tokens = self._postprocess(decoded_tokens)
 
 
-        image_summaries = results[0].get('image_summaries')
+        #image_summaries = results[0].get('image_summaries')
 
         self.result = ExecutionResult(
             outputs=decoded_tokens,
             losses=[train_loss, runtime_loss],
             scalar_summaries=None,
             histogram_summaries=None,
-            image_summaries=image_summaries
+            image_summaries=None #image_summaries
         )
