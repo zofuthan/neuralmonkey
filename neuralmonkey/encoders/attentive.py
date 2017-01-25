@@ -5,7 +5,7 @@ import tensorflow as tf
 
 
 class Attentive(metaclass=ABCMeta):
-    """A base class fro an attentive part of graph (typically encoder).
+    """A base class for an attentive part of graph (typically encoder).
 
     Objects inheriting this class are able to generate an attention object that
     allows a decoder to perform attention over an attention_object provided by

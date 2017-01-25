@@ -38,6 +38,7 @@ class SentenceEncoder(ModelPart, Attentive):
                  dropout_keep_prob: float=1.0,
                  attention_type: Optional[AttType]=None,
                  attention_fertility: int=3,
+                 attention_matrix_size: Optional[int]=None,
                  use_noisy_activations: bool=False,
                  parent_encoder: Optional["SentenceEncoder"]=None,
                  save_checkpoint: Optional[str]=None,
@@ -63,10 +64,14 @@ class SentenceEncoder(ModelPart, Attentive):
                 attention mechanism (default None)
             attention_fertility: Fertility parameter used with
                 CoverageAttention (default 3).
+            attention_matrix_size: (Optional) The size of the hidden layer
+                predicting attention energies (n' in appendix of Bahdanau 2014)
+                Defaults to rnn_size.
         """
         ModelPart.__init__(self, name, save_checkpoint, load_checkpoint)
         Attentive.__init__(
-            self, attention_type, attention_fertility=attention_fertility)
+            self, attention_type, attention_fertility=attention_fertility,
+            attention_matrix_size=attention_matrix_size)
 
         self.vocabulary = vocabulary
         self.data_id = data_id

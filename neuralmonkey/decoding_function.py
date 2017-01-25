@@ -17,7 +17,8 @@ class Attention(object):
     # For maintaining the same API as in CoverageAttention
 
     def __init__(self, attention_states, scope,
-                 input_weights=None, attention_fertility=None):
+                 input_weights=None, attention_fertility=None,
+                 attention_matrix_size=None):
         """Create the attention object.
 
         Args:
@@ -27,7 +28,10 @@ class Attention(object):
                    attention object.
             input_weights: (Optional) The padding weights on the input.
             attention_fertility: (Optional) For the Coverage attention
-                compatibilty, maximum fertility of one word.
+                compatibility, maximum fertility of one word.
+            attention_matrix_size: (Optional) The size of the hidden layer
+                predicting attention energies (n' in appendix of Bahdanau 2014)
+                Defaults to rnn_size.
         """
         self.scope = scope
         self.logits_in_time = []
@@ -46,7 +50,10 @@ class Attention(object):
                 [-1, self.attn_length, 1, self.attn_size])
 
             # Size of query vectors for attention.
-            self.attention_vec_size = self.attn_size
+            if attention_matrix_size is None:
+                self.attention_vec_size = self.attn_size
+            else:
+                self.attention_vec_size = attention_matrix_size
 
             # This variable corresponds to Bahdanau's U_a in the paper
             k = tf.get_variable(
