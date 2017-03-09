@@ -55,23 +55,42 @@ def _n_best_indices(scores: np.ndarray, beam_size: int) -> np.ndarray:
 def _score_one_seq_expansion(
         next_distributions: List[np.ndarray],
         hypotheses: List[Optional[np.ndarray]],
-        prev_distributions: List[Optional[np.ndarray]],
+        hyp_logprobs: List[Optional[np.ndarray]],
         beam_size: int,
         scoring_function: ScoringFunction) -> Tuple[np.ndarray, np.ndarray]:
     """Score and get n-best from a single sequence.
 
-    Takes `beam_size` hypotheses for a sequence and expands them witch the `4
-    * batch_size` most promissing candidates and scores them using a scoring
-    function (typically length-normalized log-likelihood). From these `4 *
-    batch_size * batch_size` candidates, only `batch_size` of them si kept to
-    the next decoding step.
+    At this moment we have one source, an n-best from the previsous step and
+    their potential exapansion in the `next_distributions` list.
+
+    The function takes `beam_size` hypotheses for a sequence and expands them
+    witch the `4 * batch_size` most promissing candidates and scores them using
+    a scoring function (typically length-normalized log-likelihood). From these
+    `4 * batch_size * batch_size` candidates, only `batch_size` of them si kept
+    to the next decoding step.
+
+    Args:
+        next_distribution: List of distribution of the next word for all
+            hypotheses in the beam - potential expansions of the previous
+            hypotheses. List of 1 x vocabulary size arrays.
+        hypotheses: List of the hypotheses we are going to expand represented
+            as 1-D arrays of indices.
+        hyp_logprobs: List of 1-D vectors of log-probs for all distributions.
+        beam size: Number of the hypotheses we should have at the end.
+        scoring_function: A function that takes the hytothesis, log-probs of
+            the hypothesis tokens and assigns it a score.
+
+    Returns:
+        Tuple of a matrix with n-best hypotheses and a matrix with hypotheses'
+        tokens logprobs.
     """
+
     candidate_scores = None
     candidate_hypotheses = None
     candidate_logprobs = None
 
     for next_distribution, hypothesis, prev_logprobs in zip(
-            next_distributions, hypotheses, prev_distributions):
+            next_distributions, hypotheses, hyp_logprobs):
         if hypothesis is None:
             first_step_best = np.argpartition(
                 -next_distribution, beam_size)[:beam_size]
@@ -79,8 +98,12 @@ def _score_one_seq_expansion(
             expanded_logprobs = np.expand_dims(
                 next_distribution[first_step_best], 1)
         else:
-            promissing_candidates = np.argpartition(
-                -next_distribution, 4 * beam_size)[:4 * beam_size]
+            promissing_count = 4 * beam_size
+            if promissing_count < len(next_distribution):
+                promissing_candidates = np.argpartition(
+                    -next_distribution, promissing_count)[:promissing_count]
+            else:
+                promissing_candidates = np.arange(len(next_distribution))
 
             expanded_hypotheses = np.array(
                 [np.append(hypothesis, index)
