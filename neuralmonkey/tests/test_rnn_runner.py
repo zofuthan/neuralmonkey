@@ -6,6 +6,7 @@ import numpy as np
 from neuralmonkey.runners.rnn_runner import (_n_best_indices,
                                              _score_one_seq_expansion,
                                              likelihood_beam_score)
+from neuralmonkey.vocabulary import END_TOKEN_INDEX, PAD_TOKEN_INDEX
 
 
 class TestRNNRunner(unittest.TestCase):
@@ -69,6 +70,31 @@ class TestRNNRunner(unittest.TestCase):
         self.assertTrue(np.all(np.array([[0, 0, 0], [0, 0, 1]] == last_hyps)))
         self.assertTrue(
             np.all(np.array([[-2, -2, -2], [-2, -2, -4]] == last_logprobs)))
+
+    def test_not_expand_finished(self):
+        """Hypotheses containg END_TOKEN should not be expanded further."""
+        beam_size = 2
+        scoring_function = likelihood_beam_score
+
+        next_distributions = np.random.uniform(-100, -1, size=(1, 10))
+
+        ending_hypothesis = np.array([[10, END_TOKEN_INDEX]])
+        ending_hyp_logprobs = np.random.uniform(-100, -1, size=(1, 2))
+
+        expanded_hyp, _ = _score_one_seq_expansion(
+            next_distributions, ending_hypothesis, ending_hyp_logprobs,
+            beam_size, scoring_function)
+        self.assertTrue(np.all(
+            expanded_hyp == [10, END_TOKEN_INDEX, PAD_TOKEN_INDEX]))
+
+        finished_hypothesis = np.array(
+            [[11, END_TOKEN_INDEX, PAD_TOKEN_INDEX]])
+        finished_hyp_logprobs = np.random.uniform(-100, -1, size=(1, 3))
+        exp_finished_hyp, _ = _score_one_seq_expansion(
+            next_distributions, finished_hypothesis, finished_hyp_logprobs,
+            beam_size, scoring_function)
+        self.assertTrue(np.all(exp_finished_hyp == [
+            11, END_TOKEN_INDEX, PAD_TOKEN_INDEX, PAD_TOKEN_INDEX]))
 
 
 if __name__ == "__main__":

@@ -25,7 +25,8 @@ from neuralmonkey.runners.base_runner import (BaseRunner, Executable,
                                               FeedDict,
                                               ExecutionResult, NextExecute)
 # pylint: enable=unused-import
-from neuralmonkey.vocabulary import Vocabulary, END_TOKEN_INDEX
+from neuralmonkey.vocabulary import (Vocabulary, END_TOKEN_INDEX,
+                                     PAD_TOKEN_INDEX)
 
 
 # pylint: disable=invalid-name
@@ -97,6 +98,10 @@ def _score_one_seq_expansion(
             expanded_hypotheses = np.expand_dims(first_step_best, axis=1)
             expanded_logprobs = np.expand_dims(
                 next_distribution[first_step_best], 1)
+        elif np.any(np.in1d(hypothesis, END_TOKEN_INDEX)):
+            expanded_hypotheses = np.array([np.append(hypothesis,
+                                                      PAD_TOKEN_INDEX)])
+            expanded_logprobs = np.array([np.append(prev_logprobs, 0)])
         else:
             promissing_count = 4 * beam_size
             if promissing_count < len(next_distribution):
