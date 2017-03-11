@@ -217,6 +217,7 @@ def likelihood_beam_score(decoded: np.ndarray, logprobs: np.ndarray) -> float:
         mask.append(hyp_mask)
 
     mask_matrix = np.array(mask)
+    assert mask_matrix.shape == logprobs.shape
     masked_logprobs = mask_matrix * logprobs
     # pylint: disable=no-member
     avg_logprobs = masked_logprobs.sum(axis=1) / mask_matrix.sum(axis=1)
@@ -440,7 +441,7 @@ class RuntimeRnnExecutable(Executable):
             self._expanded = []
 
         if self._time_step == self._decoder.max_output_len:
-            top_batch = self._to_expand[-1].decoded.T
+            top_batch = self._to_expand[0].decoded.T
             decoded_tokens = self._vocabulary.vectors_to_sentences(top_batch)
 
             if self._postprocess is not None:
