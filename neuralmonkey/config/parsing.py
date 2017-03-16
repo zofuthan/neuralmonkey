@@ -4,9 +4,13 @@ from collections import OrderedDict
 import configparser
 import re
 import time
+# pylint: disable=unused-import
+from typing import Any, Dict, Callable, Iterable, IO, List, Tuple, Optional
+# pylint: enable=unused-import
 
 from neuralmonkey.config.builder import ClassSymbol
 from neuralmonkey.config.exceptions import IniError
+from neuralmonkey.logging import log
 
 LINE_NUM = re.compile(r"^(.*) ([0-9]+)$")
 
@@ -29,7 +33,7 @@ CONSTANTS = {
 
 # this is a function because of the parse_*
 # functions which are not defined yet
-def _keyval_parser_dict():
+def _keyval_parser_dict() -> Dict[Any, Callable]:
     return {
         INTEGER: int,
         FLOAT: float,
@@ -41,13 +45,13 @@ def _keyval_parser_dict():
     }
 
 
-def _split_on_commas(string):
+def _split_on_commas(string: str) -> List[str]:
     """Splits a bracketed string by commas, preserving any commas
     inside brackets."""
 
     items = []
-    char_buffer = []
-    openings = []
+    char_buffer = []  # type: List[Optional[str]]
+    openings = []  # type: List[Optional[str]]
 
     for i, char in enumerate(string):
         if char == ',' and len(openings) == 0:
@@ -72,7 +76,7 @@ def _split_on_commas(string):
     return items
 
 
-def _parse_list(string):
+def _parse_list(string: str) -> List[Any]:
     """ Parses the string recursively as a list """
 
     matched_content = LIST.match(string).group(1)
@@ -89,7 +93,7 @@ def _parse_list(string):
     return values
 
 
-def _parse_tuple(string):
+def _parse_tuple(string: str) -> Tuple[Any, ...]:
     """ Parses the string recursively as a tuple """
 
     items = _split_on_commas(TUPLE.match(string).group(1))
@@ -98,13 +102,13 @@ def _parse_tuple(string):
     return tuple(values)
 
 
-def _parse_class_name(string):
+def _parse_class_name(string: str) -> ClassSymbol:
     """ Parse the string as a module or class name.
     """
     return ClassSymbol(string)
 
 
-def _parse_value(string):
+def _parse_value(string: str) -> Any:
     """ Parses the value recursively according to the Nerualmonkey grammar.
 
     Arguments:
@@ -121,7 +125,7 @@ def _parse_value(string):
     raise Exception("Cannot parse value: '{}'.".format(string)) from None
 
 
-def _parse_ini(config_file, filename=""):
+def _parse_ini(config_file: Iterable[str], filename: str="") -> Dict[str, Any]:
     """ Parses an INI file into a dictionary """
 
     line_numbers = (line.strip() + " " + str(i + 1)
@@ -131,7 +135,7 @@ def _parse_ini(config_file, filename=""):
     config = configparser.ConfigParser()
     config.read_file(line_numbers, source=filename)
 
-    new_config = OrderedDict()
+    new_config = OrderedDict()  # type: Dict[str, Any]
     for section in config.sections():
         new_config[section] = OrderedDict()
 
@@ -142,13 +146,37 @@ def _parse_ini(config_file, filename=""):
     return new_config
 
 
-def parse_file(config_file):
+def _apply_change(config_dict: Dict[str, Any], setting: str) -> None:
+    if '=' not in setting:
+        raise Exception('Invalid setting "{}"'.format(setting))
+    key, value = (s.strip() for s in setting.split('=', maxsplit=1))
+
+    if '.' in key:
+        section, option = key.split('.', maxsplit=1)
+    else:
+        section = 'main'
+        option = key
+
+    if section not in config_dict:
+        log("Creating new section '{}'".format(section))
+        config_dict[section] = OrderedDict()
+
+    config_dict[section][option] = -1, value  # no line number
+
+
+def parse_file(config_file: Iterable[str],
+               changes: Optional[Iterable[str]]=None) -> Tuple[Dict[str, Any],
+                                                               Dict[str, Any]]:
     """ Parses an INI file and creates all values """
 
-    parsed_dicts = OrderedDict()
+    parsed_dicts = OrderedDict()  # type: Dict[str, Any]
     time_stamp = time.strftime("%Y-%m-%d-%H-%M-%S")
 
     config = _parse_ini(config_file)
+
+    if changes is not None:
+        for change in changes:
+            _apply_change(config, change)
 
     for section in config:
         parsed_dicts[section] = OrderedDict()
@@ -168,4 +196,15 @@ def parse_file(config_file):
 
             parsed_dicts[section][key] = value
 
-    return parsed_dicts
+    # also return the unparsed config dict; need to remove line numbers
+    raw_config = OrderedDict([
+        (name, OrderedDict([(key, val) for key, (_, val) in section.items()]))
+        for name, section in config.items()])
+
+    return raw_config, parsed_dicts
+
+
+def write_file(config_dict: Dict[str, Any], config_file: IO[str]) -> None:
+    config = configparser.ConfigParser()
+    config.read_dict(config_dict)
+    config.write(config_file, space_around_delimiters=False)

@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Any
 import numpy as np
 import tensorflow as tf
 
@@ -12,14 +12,14 @@ class GreedyRunner(BaseRunner):
 
     def __init__(self,
                  output_series: str,
-                 decoder,
+                 decoder: Any,
                  postprocess: Callable[[List[str]], List[str]]=None) -> None:
         super(GreedyRunner, self).__init__(output_series, decoder)
         self._postprocess = postprocess
 
         val_plot_summaries = tf.get_collection("summary_val_plots")
         if val_plot_summaries:
-            self.image_summaries = tf.merge_summary(val_plot_summaries)
+            self.image_summaries = tf.summary.merge(val_plot_summaries)
         else:
             self.image_summaries = None
 

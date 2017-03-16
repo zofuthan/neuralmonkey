@@ -2,9 +2,11 @@
 This is a training script for sequence to sequence learning.
 """
 
+import argparse
 import sys
 import random
 import os
+import shlex
 from shutil import copyfile
 import numpy as np
 import tensorflow as tf
@@ -39,7 +41,6 @@ def create_config() -> Configuration:
                         required=False, default=15)
     config.add_argument('train_start_offset', required=False, default=0)
     config.add_argument('runners_batch_size', required=False, default=None)
-    config.add_argument('minimize', required=False, default=False)
     config.add_argument('postprocess')
     config.add_argument('name')
     config.add_argument('random_seed', required=False)
@@ -51,14 +52,19 @@ def create_config() -> Configuration:
 
 # pylint: disable=too-many-statements
 def main() -> None:
-    if len(sys.argv) != 2:
-        print("Usage: train.py <ini_file>")
-        exit(1)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('config', metavar='INI-FILE',
+                        help='the configuration file for the experiment')
+    parser.add_argument('-s', '--set', type=str, metavar='SETTING',
+                        action='append', dest='config_changes',
+                        help='override an option in the configuration; the '
+                        'syntax is [section.]option=value')
+    args = parser.parse_args()
 
     # define valid parameters and defaults
     cfg = create_config()
     # load the params from the config file, getting also the simple arguments
-    cfg.load_file(sys.argv[1])
+    cfg.load_file(args.config, changes=args.config_changes)
     # various things like randseed or summarywriter should be set up here
     # so that graph building can be recorded
     # build all the objects specified in the config
@@ -92,8 +98,10 @@ def main() -> None:
                 .format(cfg.args.output, exc), color='red')
             exit(1)
 
+    args_file = "{}/args".format(cfg.args.output)
     log_file = "{}/experiment.log".format(cfg.args.output)
     ini_file = "{}/experiment.ini".format(cfg.args.output)
+    orig_ini_file = "{}/original.ini".format(cfg.args.output)
     git_commit_file = "{}/git_commit".format(cfg.args.output)
     git_diff_file = "{}/git_diff".format(cfg.args.output)
     variables_file_prefix = "{}/variables.data".format(cfg.args.output)
@@ -108,9 +116,13 @@ def main() -> None:
            or os.path.exists("{}.0".format(variables_file_prefix))):
         cont_index += 1
 
+        args_file = "{}/args.cont-{}".format(
+            cfg.args.output, cont_index)
         log_file = "{}/experiment.log.cont-{}".format(
             cfg.args.output, cont_index)
         ini_file = "{}/experiment.ini.cont-{}".format(
+            cfg.args.output, cont_index)
+        orig_ini_file = "{}/original.ini.cont-{}".format(
             cfg.args.output, cont_index)
         git_commit_file = "{}/git_commit.cont-{}".format(
             cfg.args.output, cont_index)
@@ -119,7 +131,12 @@ def main() -> None:
         variables_file_prefix = "{}/variables.data.cont-{}".format(
             cfg.args.output, cont_index)
 
-    copyfile(sys.argv[1], ini_file)
+    with open(args_file, 'w') as file:
+        print(' '.join(shlex.quote(a) for a in sys.argv), file=file)
+
+    cfg.save_file(ini_file)
+    copyfile(args.config, orig_ini_file)
+
     Logging.set_log_file(log_file)
 
     # this points inside the neuralmonkey/ dir inside the repo, but
@@ -135,9 +152,9 @@ def main() -> None:
     os.system("(cd {}; git --no-pager diff --color=always) > {}"
               .format(repodir, git_diff_file))
 
-    link_best_vars = "{}.best".format(variables_file_prefix)
-
     cfg.build_model(warn_unused=True)
+
+    cfg.model.tf_manager.init_saving(variables_file_prefix)
 
     try:
         check_dataset_and_coders(cfg.model.train_dataset,
@@ -165,8 +182,6 @@ def main() -> None:
         evaluators=cfg.model.evaluation,
         runners=cfg.model.runners,
         test_datasets=cfg.model.test_datasets,
-        link_best_vars=link_best_vars,
-        vars_prefix=variables_file_prefix,
         logging_period=cfg.model.logging_period,
         validation_period=cfg.model.validation_period,
         val_preview_input_series=cfg.model.val_preview_input_series,
@@ -175,5 +190,4 @@ def main() -> None:
         postprocess=cfg.model.postprocess,
         train_start_offset=cfg.model.train_start_offset,
         runners_batch_size=cfg.model.runners_batch_size,
-        initial_variables=cfg.model.initial_variables,
-        minimize_metric=cfg.model.minimize)
+        initial_variables=cfg.model.initial_variables)

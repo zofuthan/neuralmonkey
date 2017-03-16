@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Tuple
+from typing import Optional, Tuple, Any
 
 import tensorflow as tf
 from typeguard import check_argument_types
@@ -12,7 +12,7 @@ from neuralmonkey.dataset import Dataset
 from neuralmonkey.vocabulary import Vocabulary
 
 # pylint: disable=invalid-name
-RNNCellTuple = Tuple[tf.nn.rnn_cell.RNNCell, tf.nn.rnn_cell.RNNCell]
+RNNCellTuple = Tuple[tf.contrib.rnn.RNNCell, tf.contrib.rnn.RNNCell]
 # pylint: enable=invalid-name
 
 
@@ -34,13 +34,13 @@ class SentenceEncoder(ModelPart, Attentive):
                  rnn_size: int,
                  max_input_len: Optional[int]=None,
                  dropout_keep_prob: float=1.0,
-                 attention_type: Optional[Callable]=None,
+                 attention_type: Optional[Any]=None,
                  attention_fertility: int=3,
                  use_noisy_activations: bool=False,
                  parent_encoder: Optional["SentenceEncoder"]=None,
                  save_checkpoint: Optional[str]=None,
                  load_checkpoint: Optional[str]=None) -> None:
-        """Createes a new instance of the sentence encoder
+        """Create a new instance of the sentence encoder.
 
         Arguments:
             vocabulary: Input vocabulary
@@ -89,19 +89,21 @@ class SentenceEncoder(ModelPart, Attentive):
             with tf.variable_scope('input_projection'):
                 self._create_embedding_matrix()
                 embedded_inputs = self._embed(self.inputs)  # type: tf.Tensor
+                self.embedded_inputs = embedded_inputs
 
             fw_cell, bw_cell = self.rnn_cells()  # type: RNNCellTuple
             outputs_bidi_tup, encoded_tup = tf.nn.bidirectional_dynamic_rnn(
-                fw_cell, bw_cell, embedded_inputs, self.sentence_lengths,
+                fw_cell, bw_cell, embedded_inputs,
+                sequence_length=self.sentence_lengths,
                 dtype=tf.float32)
 
-            self.hidden_states = tf.concat(2, outputs_bidi_tup)
+            self.hidden_states = tf.concat(outputs_bidi_tup, 2)
 
             with tf.variable_scope('attention_tensor'):
                 self.__attention_tensor = self._dropout(
                     self.hidden_states)
 
-            self.encoded = tf.concat(1, encoded_tup)
+            self.encoded = tf.concat(encoded_tup, 1)
 
         log("Sentence encoder initialized")
 
@@ -111,7 +113,8 @@ class SentenceEncoder(ModelPart, Attentive):
 
     @property
     def _attention_mask(self):
-        return self._input_mask
+        # TODO tohle je proti OOP prirode
+        return self.input_mask
 
     @property
     def vocabulary_size(self):
@@ -126,12 +129,12 @@ class SentenceEncoder(ModelPart, Attentive):
                                      shape=[None, None],
                                      name="encoder_input")
 
-        self._input_mask = tf.placeholder(
+        self.input_mask = tf.placeholder(
             tf.float32, shape=[None, None],
             name="encoder_padding")
 
         self.sentence_lengths = tf.to_int32(
-            tf.reduce_sum(self._input_mask, 1))
+            tf.reduce_sum(self.input_mask, 1))
 
     def _create_embedding_matrix(self):
         """Create variables and operations for embedding the input words.
@@ -163,7 +166,7 @@ class SentenceEncoder(ModelPart, Attentive):
         # directly
         train_mode_batch = tf.fill(tf.shape(variable)[:1], self.train_mode)
         dropped_value = tf.nn.dropout(variable, self.dropout_keep_p)
-        return tf.select(train_mode_batch, dropped_value, variable)
+        return tf.where(train_mode_batch, dropped_value, variable)
 
     def _embed(self, inputs: tf.Tensor) -> tf.Tensor:
         """Embed the input using the embedding matrix and apply dropout
@@ -215,6 +218,6 @@ class SentenceEncoder(ModelPart, Attentive):
         # as sentences_to_tensor returns lists of shape (time, batch),
         # we need to transpose
         fd[self.inputs] = list(zip(*vectors))
-        fd[self._input_mask] = list(zip(*paddings))
+        fd[self.input_mask] = list(zip(*paddings))
 
         return fd
