@@ -44,8 +44,8 @@ def check_dataset_and_coders(dataset, runners):
                                              cod.__class__.__name__)
                     for cod, serie in missing]
 
-        raise CheckingException("Dataset '{}' is mising series {}:"
-                                .format(dataset.name, ", ".join(formated)))
+        # in multitask training you can miss serie in a dataset
+        log(", ".join(formated), color='red')
 
 
 def missing_attributes(obj, attributes):
